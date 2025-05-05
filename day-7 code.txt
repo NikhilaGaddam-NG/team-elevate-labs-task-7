@@ -1,0 +1,84 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.decomposition import PCA
+from sklearn.metrics import classification_report, accuracy_score
+
+# Load dataset
+data = pd.read_csv("breast-cancer.csv")
+
+# Check dataset structure
+print(data.head())
+print(data.columns)
+
+# Assume 'diagnosis' is the target (M = malignant, B = benign)
+data['diagnosis'] = data['diagnosis'].map({'M': 1, 'B': 0}).astype(float) # Convert to float to allow NaN handling
+data.dropna(subset=['diagnosis'], inplace=True) # Remove rows with NaN values in 'diagnosis'
+
+
+X = data.drop(['id', 'diagnosis', 'Unnamed: 32'], axis=1)
+y = data['diagnosis']
+
+# Normalize features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Reduce to 2D for visualization
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_scaled)
+
+# Train/Test Split
+X_train, X_test, y_train, y_test = train_test_split(X_pca, y, test_size=0.2, random_state=42)
+
+# 1. SVM with Linear Kernel
+svm_linear = SVC(kernel='linear', C=1.0)
+svm_linear.fit(X_train, y_train)
+
+# 2. SVM with RBF Kernel
+svm_rbf = SVC(kernel='rbf', C=1.0, gamma='scale')
+svm_rbf.fit(X_train, y_train)
+
+# Evaluation
+for model, name in zip([svm_linear, svm_rbf], ['Linear SVM', 'RBF SVM']):
+    y_pred = model.predict(X_test)
+    print(f"\n{name} Accuracy: {accuracy_score(y_test, y_pred):.4f}")
+    print(classification_report(y_test, y_pred))
+
+# 3. Visualize decision boundaries
+def plot_decision_boundary(clf, X, y, title):
+    h = .02
+    x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
+    y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                         np.arange(y_min, y_max, h))
+
+    Z = clf.predict(np.c_[xx.ravel(), yy.ravel()])
+    Z = Z.reshape(xx.shape)
+
+    plt.figure(figsize=(8, 6))
+    plt.contourf(xx, yy, Z, alpha=0.5)
+    plt.scatter(X[:, 0], X[:, 1], c=y, edgecolors='k')
+    plt.title(title)
+    plt.xlabel('PCA Component 1')
+    plt.ylabel('PCA Component 2')
+    plt.show()
+
+plot_decision_boundary(svm_linear, X_pca, y, "SVM with Linear Kernel")
+plot_decision_boundary(svm_rbf, X_pca, y, "SVM with RBF Kernel")
+
+# 4. Hyperparameter Tuning
+param_grid = {'C': [0.1, 1, 10, 100],
+              'gamma': ['scale', 0.01, 0.001],
+              'kernel': ['rbf']}
+
+grid = GridSearchCV(SVC(), param_grid, cv=5)
+grid.fit(X_pca, y)
+print("\nBest parameters from GridSearchCV:", grid.best_params_)
+
+# 5. Cross-validation
+cv_scores = cross_val_score(grid.best_estimator_, X_pca, y, cv=5)
+print("Cross-validation scores:", cv_scores)
+print("Mean CV accuracy: {:.4f}".format(cv_scores.mean()))
